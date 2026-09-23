@@ -1,0 +1,40 @@
+# Optional: Ingress for production with domain name
+# Uncomment and configure after installing ingress controller
+
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: food-delivery-ingress
+#   namespace: food-delivery
+#   annotations:
+#     nginx.ingress.kubernetes.io/rewrite-target: /
+#     cert-manager.io/cluster-issuer: "letsencrypt-prod"  # For TLS/SSL
+# spec:
+#   ingressClassName: nginx
+#   tls:
+#   - hosts:
+#     - food-delivery.yourdomain.com
+#     secretName: food-delivery-tls
+#   rules:
+#   - host: food-delivery.yourdomain.com
+#     http:
+#       paths:
+#       - path: /api
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: api-gateway
+#             port:
+#               number: 4000
+#       - path: /
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: frontend
+#             port:
+#               number: 3000
+
+---
+# For now, using NodePort services
+# Access via: http://<worker-node-ip>:30000 (frontend)
+# Access via: http://<worker-node-ip>:30080 (api-gateway)

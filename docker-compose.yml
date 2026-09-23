@@ -1,0 +1,441 @@
+# ============================================
+# FOOD DELIVERY MICROSERVICES PLATFORM
+# ============================================
+# Complete microservices architecture with:
+# - 9 Backend Services (Node.js + Express)
+# - 1 API Gateway (Centralized routing)
+# - 1 PostgreSQL Database (Multiple databases)
+# - 1 React Frontend
+#
+# Quick Start:
+#   docker-compose up --build
+#
+# Access:
+#   Frontend: http://localhost:3000
+#   API Gateway: http://localhost:4000
+# ============================================
+
+services:
+  # ============================================
+  # DATABASE - PostgreSQL 16
+  # ============================================
+  # Single PostgreSQL instance with multiple databases
+  # Databases: userdb, restaurantdb, orderdb, deliverydb, 
+  #            paymentdb, reviewdb, coupondb
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: fd_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      # PostgreSQL will create these databases via init script
+    ports:
+      - "5433:5432"
+    volumes:
+      # Persistent data storage
+      - pgdata:/var/lib/postgresql/data
+      # Database initialization script (creates all databases)
+      - ./db-init/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - food-delivery-network
+
+  # ============================================
+  # USER SERVICE - Port 4001
+  # ============================================
+  # Handles user registration, authentication, JWT tokens
+  # Database: userdb
+  # ============================================
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: fd_user_service
+    restart: unless-stopped
+    environment:
+      PORT: 4001
+      NODE_ENV: production
+      # PostgreSQL Connection
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: userdb
+      # JWT Configuration
+      JWT_SECRET: dev_secret_change_me_in_production
+    ports:
+      - "4001:4001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - food-delivery-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # RESTAURANT SERVICE - Port 4002
+  # ============================================
+  # Manages restaurants, menus, menu items
+  # Database: restaurantdb
+  # ============================================
+  restaurant-service:
+    build:
+      context: ./restaurant-service
+      dockerfile: Dockerfile
+    container_name: fd_restaurant_service
+    restart: unless-stopped
+    environment:
+      PORT: 4002
+      NODE_ENV: production
+      # PostgreSQL Connection
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: restaurantdb
+      # JWT Configuration
+      JWT_SECRET: dev_secret_change_me_in_production
+    ports:
+      - "4002:4002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - food-delivery-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # ORDER SERVICE - Port 4003
+  # ============================================
+  # Handles order creation, status tracking
+  # Database: orderdb
+  # Communicates with: Restaurant, Notification services
+  # ============================================
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: fd_order_service
+    restart: unless-stopped
+    environment:
+      PORT: 4003
+      NODE_ENV: production
+      # PostgreSQL Connection
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: orderdb
+      # JWT Configuration
+      JWT_SECRET: dev_secret_change_me_in_production
+      # Service URLs for inter-service communication
+      RESTAURANT_SERVICE_URL: http://restaurant-service:4002
+      NOTIFICATION_SERVICE_URL: http://notification-service:4006
+    ports:
+      - "4003:4003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      restaurant-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    networks:
+      - food-delivery-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # DELIVERY SERVICE - Port 4004
+  # ============================================
+  # Manages delivery assignments, tracking
+  # Database: deliverydb
+  # Communicates with: Order, Notification services
+  # ============================================
+  delivery-service:
+    build:
+      context: ./delivery-service
+      dockerfile: Dockerfile
+    container_name: fd_delivery_service
+    restart: unless-stopped
+    environment:
+      PORT: 4004
+      NODE_ENV: production
+      # PostgreSQL Connection
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: deliverydb
+      # JWT Configuration
+      JWT_SECRET: dev_secret_change_me_in_production
+      # Service URLs
+      ORDER_SERVICE_URL: http://order-service:4003
+      NOTIFICATION_SERVICE_URL: http://notification-service:4006
+    ports:
+      - "4004:4004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      order-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    networks:
+      - food-delivery-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # NOTIFICATION SERVICE - Port 4006
+  # ============================================
+  # Handles notifications (email, SMS, push)
+  # Stateless service - no database
+  # ============================================
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: fd_notification_service
+    restart: unless-stopped
+    environment:
+      PORT: 4006
+      NODE_ENV: production
+    ports:
+      - "4006:4006"
+    networks:
+      - food-delivery-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # PAYMENT SERVICE - Port 4007
+  # ============================================
+  # Processes payments, stores payment records
+  # Database: paymentdb
+  # ============================================
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    container_name: fd_payment_service
+    restart: unless-stopped
+    environment:
+      PORT: 4007
+      NODE_ENV: production
+      # PostgreSQL Connection
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: paymentdb
+      # JWT Configuration
+      JWT_SECRET: dev_secret_change_me_in_production
+      # Internal service dependencies
+      ORDER_SERVICE_URL: http://order-service:4003
+    ports:
+      - "4007:4007"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - food-delivery-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4007/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # REVIEW SERVICE - Port 4008
+  # ============================================
+  # Manages restaurant reviews and ratings
+  # Database: reviewdb
+  # ============================================
+  review-service:
+    build:
+      context: ./review-service
+      dockerfile: Dockerfile
+    container_name: fd_review_service
+    restart: unless-stopped
+    environment:
+      PORT: 4008
+      NODE_ENV: production
+      # PostgreSQL Connection
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: reviewdb
+      # JWT Configuration
+      JWT_SECRET: dev_secret_change_me_in_production
+    ports:
+      - "4008:4008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - food-delivery-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # COUPON SERVICE - Port 4009
+  # ============================================
+  # Manages discount coupons, validates codes
+  # Database: coupondb
+  # ============================================
+  coupon-service:
+    build:
+      context: ./coupon-service
+      dockerfile: Dockerfile
+    container_name: fd_coupon_service
+    restart: unless-stopped
+    environment:
+      PORT: 4009
+      NODE_ENV: production
+      # PostgreSQL Connection
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: coupondb
+      # JWT Configuration
+      JWT_SECRET: dev_secret_change_me_in_production
+      # Internal service dependencies
+      ORDER_SERVICE_URL: http://order-service:4003
+    ports:
+      - "4009:4009"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - food-delivery-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4009/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # API GATEWAY - Port 4000
+  # ============================================
+  # Central entry point for all API requests
+  # Routes to appropriate microservices
+  # Paths:
+  #   /api/users         -> user-service
+  #   /api/restaurants   -> restaurant-service
+  #   /api/orders        -> order-service
+  #   /api/deliveries    -> delivery-service
+  #   /api/notifications -> notification-service
+  #   /api/payments      -> payment-service
+  #   /api/reviews       -> review-service
+  #   /api/coupons       -> coupon-service
+  # ============================================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: fd_api_gateway
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      # Service URLs - Internal Docker network
+      USER_SERVICE_URL: http://user-service:4001
+      RESTAURANT_SERVICE_URL: http://restaurant-service:4002
+      ORDER_SERVICE_URL: http://order-service:4003
+      DELIVERY_SERVICE_URL: http://delivery-service:4004
+      NOTIFICATION_SERVICE_URL: http://notification-service:4006
+      PAYMENT_SERVICE_URL: http://payment-service:4007
+      REVIEW_SERVICE_URL: http://review-service:4008
+      COUPON_SERVICE_URL: http://coupon-service:4009
+    ports:
+      - "4000:4000"
+    depends_on:
+      - user-service
+      - restaurant-service
+      - order-service
+      - delivery-service
+      - notification-service
+      - payment-service
+      - review-service
+      - coupon-service
+    networks:
+      - food-delivery-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # FRONTEND - React App - Port 3000
+  # ============================================
+  # Modern React frontend with gradient design
+  # Features:
+  #   - Restaurant browsing
+  #   - Cart management
+  #   - Checkout with payment options
+  #   - Order tracking
+  #   - Reviews & ratings
+  #   - Coupon application
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fd_frontend
+    restart: unless-stopped
+    environment:
+      # React environment variables
+      REACT_APP_API_URL: http://localhost:4000
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api-gateway
+    networks:
+      - food-delivery-network
+
+# ============================================
+# VOLUMES
+# ============================================
+volumes:
+  # PostgreSQL persistent data storage
+  pgdata:
+    driver: local
+
+# ============================================
+# NETWORKS
+# ============================================
+networks:
+  # Internal network for service communication
+  food-delivery-network:
+    driver: bridge

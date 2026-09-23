@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: food-delivery
+data:
+  # Database configuration
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_USER: "postgres"
+  
+  # Service URLs (internal cluster DNS)
+  USER_SERVICE_URL: "http://user-service:4001"
+  RESTAURANT_SERVICE_URL: "http://restaurant-service:4002"
+  ORDER_SERVICE_URL: "http://order-service:4003"
+  DELIVERY_SERVICE_URL: "http://delivery-service:4004"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:4006"
+  PAYMENT_SERVICE_URL: "http://payment-service:4007"
+  REVIEW_SERVICE_URL: "http://review-service:4008"
+  COUPON_SERVICE_URL: "http://coupon-service:4009"
+  
+  # API Gateway
+  API_GATEWAY_URL: "http://api-gateway:4000"
+  
+  # Node environment
+  NODE_ENV: "production"

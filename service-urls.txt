@@ -1,0 +1,48 @@
+🌐 SERVICE URLs AND TEST COMMANDS
+================================
+
+DIRECT SERVICE ACCESS (for debugging):
+--------------------------------------
+API Gateway:        http://localhost:4000/health
+User Service:       http://localhost:4001/health
+Restaurant Service: http://localhost:4002/health
+Order Service:      http://localhost:4003/health
+Delivery Service:   http://localhost:4004/health
+Notification:       http://localhost:4006/health
+
+FRONTEND APPLICATION:
+--------------------
+Main App:           http://localhost:3000/
+
+API ENDPOINTS (through gateway):
+--------------------------------
+Restaurants:        http://localhost:4000/api/restaurants
+Single Restaurant:  http://localhost:4000/api/restaurants/1
+Restaurant Menu:    http://localhost:4000/api/restaurants/1/menu
+
+User Registration:  POST http://localhost:4000/api/users/register
+User Login:         POST http://localhost:4000/api/users/login
+My Profile:         GET  http://localhost:4000/api/users/me
+
+Place Order:        POST http://localhost:4000/api/orders
+My Orders:          GET  http://localhost:4000/api/orders/mine
+
+⚠️  IMPORTANT NOTES:
+-------------------
+1. If you see "Cannot GET" error, make sure you're accessing:
+   - Frontend UI: http://localhost:3000 (not 4000)
+   - API endpoints must include /api prefix
+
+2. The API Gateway (port 4000) only serves API routes, not HTML pages
+   - Correct: http://localhost:4000/api/restaurants ✅
+   - Wrong:   http://localhost:4000/restaurants ❌
+
+3. All API routes require the /api prefix when going through the gateway
+
+TEST IN BROWSER:
+---------------
+Open these URLs in your browser:
+1. http://localhost:3000 - Main application (this is what you want!)
+2. http://localhost:4000/api/restaurants - Should show JSON data
+3. http://localhost:4000/api/restaurants/1/menu - Should show menu JSON
+
