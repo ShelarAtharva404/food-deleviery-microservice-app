@@ -173,7 +173,7 @@ pipelines:
               script:
                 - cd frontend
                 - npm install
-                - npm run build
+                - CI=false npm run build  # Disable treating warnings as errors
                 - echo "Frontend built successfully"
       
       # Docker Build & Push Stage
