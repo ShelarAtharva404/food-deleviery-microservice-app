@@ -26,7 +26,6 @@ permissions:
 
 env:
   NODE_VERSION: '20'
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
 jobs:
   validate:
@@ -125,8 +124,8 @@ jobs:
           context: ${{ matrix.service }}
           push: true
           tags: |
-            ${{ env.DOCKERHUB_USERNAME }}/${{ matrix.image }}:${{ github.sha }}
-            ${{ env.DOCKERHUB_USERNAME }}/${{ matrix.image }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:latest
 
   deploy:
     name: ${{ inputs.action == 'rollback' && 'Rollback' || 'Deploy' }} to ${{ inputs.environment }}
@@ -147,6 +146,7 @@ jobs:
         if: inputs.action == 'deploy'
         env:
           IMAGE_TAG: ${{ github.sha }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
           kubectl apply -f k8s/
           for service in user restaurant order delivery notification payment review coupon api-gateway frontend; do
