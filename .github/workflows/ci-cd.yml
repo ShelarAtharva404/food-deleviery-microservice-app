@@ -1,0 +1,171 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Kubernetes action to run
+        required: true
+        default: deploy
+        type: choice
+        options: [deploy, rollback]
+      environment:
+        description: GitHub environment containing the KUBE_CONFIG secret
+        required: true
+        default: production
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+jobs:
+  validate:
+    name: Validate configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+      - name: Validate Kubernetes manifest files exist
+        run: test "$(find k8s -maxdepth 1 -name '*.yaml' -type f | wc -l)" -gt 0
+
+  test-services:
+    name: Test ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - user-service
+          - restaurant-service
+          - order-service
+          - payment-service
+          - review-service
+          - coupon-service
+          - delivery-service
+          - notification-service
+          - api-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ matrix.service }}/package-lock.json
+      - name: Install dependencies
+        working-directory: ${{ matrix.service }}
+        run: npm ci
+
+  build-frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build
+        working-directory: frontend
+        env:
+          CI: 'false'
+        run: npm run build
+
+  publish-images:
+    name: Publish ${{ matrix.service }} image
+    needs: [validate, test-services, build-frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: user-service
+            image: food-delivery-user-service
+          - service: restaurant-service
+            image: food-delivery-restaurant-service
+          - service: order-service
+            image: food-delivery-order-service
+          - service: payment-service
+            image: food-delivery-payment-service
+          - service: review-service
+            image: food-delivery-review-service
+          - service: coupon-service
+            image: food-delivery-coupon-service
+          - service: delivery-service
+            image: food-delivery-delivery-service
+          - service: notification-service
+            image: food-delivery-notification-service
+          - service: api-gateway
+            image: food-delivery-api-gateway
+          - service: frontend
+            image: food-delivery-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ env.DOCKERHUB_USERNAME }}/${{ matrix.image }}:latest
+
+  deploy:
+    name: ${{ inputs.action == 'rollback' && 'Rollback' || 'Deploy' }} to ${{ inputs.environment }}
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Configure Kubernetes access
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+      - name: Deploy manifests and update images
+        if: inputs.action == 'deploy'
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          kubectl apply -f k8s/
+          for service in user restaurant order delivery notification payment review coupon api-gateway frontend; do
+            deployment="${service}-service"
+            container="${service}-service"
+            image="food-delivery-${service}-service"
+            if [ "$service" = "api-gateway" ] || [ "$service" = "frontend" ]; then
+              deployment="$service"
+              container="$service"
+              image="food-delivery-$service"
+            fi
+            kubectl set image "deployment/$deployment" "$container=$DOCKERHUB_USERNAME/$image:$IMAGE_TAG" -n food-delivery
+            kubectl rollout status "deployment/$deployment" -n food-delivery
+          done
+      - name: Roll back deployments
+        if: inputs.action == 'rollback'
+        run: |
+          for service in user restaurant order delivery notification payment review coupon; do
+            kubectl rollout undo "deployment/${service}-service" -n food-delivery
+          done
+          kubectl rollout undo deployment/api-gateway -n food-delivery
+          kubectl rollout undo deployment/frontend -n food-delivery
